@@ -52,28 +52,26 @@ class EsimController extends Controller
         $successfulPurchases = [];
         $failedPurchases = [];
 
-        try {
-            // satışları oluştur
-            $pendingSalesData = $this->esimService->createPendingSale([
-                'api_id' => $validatedData['planInfo']['api_id'],
-                'gsm_no' => $validatedData['userInfo']['gsm_no'],
-                'email'  => $validatedData['userInfo']['email'],
-            ]);
+        $pendingSalesData = $this->esimService->createPendingSale([
+            'api_id' => $validatedData['planInfo']['api_id'],
+            'gsm_no' => $validatedData['userInfo']['gsm_no'],
+            'email'  => $validatedData['userInfo']['email'],
+        ]);
 
-            $soldEsimsArray = data_get($pendingSalesData, 'sold_esim', []);
-            $soldEsimsArray = isset($soldEsimsArray[0]) ? $soldEsimsArray : [$soldEsimsArray];
+        $soldEsimsArray = data_get($pendingSalesData, 'sold_esim', []);
+        $soldEsimsArray = isset($soldEsimsArray[0]) ? $soldEsimsArray : [$soldEsimsArray];
 
-            // satışı onayla ve ödemeyi yap
-            foreach ($soldEsimsArray as $esim) {
-                $soldEsimId = data_get($esim, 'id');
-                if (!$soldEsimId) {
-                    $failedPurchases[] = [
-                        'id' => null,
-                        'reason' => 'Bekleyen satış verisinden ID alınamadı.'
-                    ];
-                    continue;
-                }
+        foreach ($soldEsimsArray as $esim) {
+            $soldEsimId = data_get($esim, 'id');
+            if (!$soldEsimId) {
+                $failedPurchases[] = [
+                    'id' => null,
+                    'reason' => 'Bekleyen satış verisinden ID alınamadı.'
+                ];
+                continue;
+            }
 
+            try {
                 $confirmData = $this->esimService->confirmPayment([
                     'id'                     => $soldEsimId,
                     'kartNo'                 => $validatedData['paymentInfo']['kartNo'],
@@ -83,7 +81,6 @@ class EsimController extends Controller
                     'taksitSayisi'           => 1,
                 ]);
 
-                // API yanıtından QR kodunu ve diğer detayları güvenle al
                 $qrCode = data_get($confirmData, 'sold_esim.parameters.data.0.esimDetail.0.qr_code');
 
                 if ($qrCode) {
@@ -102,18 +99,16 @@ class EsimController extends Controller
                         'provider_response' => $confirmData
                     ];
                 }
+            } catch (EsimApiException $e) {
+                Log::warning('eSIM onaylama hatası (ID: ' . $soldEsimId . '): ' . $e->getMessage(), ['exception' => $e]);
+                $failedPurchases[] = [
+                    'id' => $soldEsimId,
+                    'reason' => $e->getMessage(),
+                    'provider_response' => $e->errorData,
+                ];
             }
-
-        } catch (EsimApiException $e) {
-            Log::error('eSIM işleminde kritik API hatası: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json([
-                'status'  => 'error',
-                'message' => $e->getMessage(),
-                'details' => $e->errorData ?? null
-            ], $e->getCode() ?: 502);
         }
 
-        // değerlendir yanıt oluştur
         if (empty($successfulPurchases)) {
             return response()->json([
                 'status'  => 'failure',

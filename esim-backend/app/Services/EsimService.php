@@ -91,8 +91,13 @@ class EsimService
             ->post($this->apiUrl . '/esim/confirm', $data);
 
         if ($response->failed()) {
-            Log::error('ID ' . $data['id'] . ' için onaylama başarısız.', $response->json() ?? []);
-            return null;
+            Log::error('ID ' . ($data['id'] ?? 'N/A') . ' için onaylama başarısız.', $response->json() ?? []);
+
+            throw new EsimApiException(
+                'eSIM onaylama işlemi başarısız.',
+                $response->status(),
+                $response->json() ?? []
+            );
         }
 
         return $response->json();
