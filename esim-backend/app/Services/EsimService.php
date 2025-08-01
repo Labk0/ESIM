@@ -59,7 +59,6 @@ class EsimService
                 );
             }
 
-            // DÜZELTME: Artık doğru anahtar olan 'coverages' okunuyor.
             return $response->json()['coverages'] ?? [];
         });
     }
